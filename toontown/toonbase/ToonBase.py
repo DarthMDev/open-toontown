@@ -147,6 +147,8 @@ class ToonBase(OTPBase.OTPBase):
         self.oldX = max(1, base.win.getXSize())
         self.oldY = max(1, base.win.getYSize())
         self.aspectRatio = float(self.oldX) / self.oldY
+        self.isSprinting = 0
+        self.accept('shift', self.toggleSprint)
         return
 
     def windowEvent(self, win):
@@ -395,3 +397,25 @@ class ToonBase(OTPBase.OTPBase):
 
     def playMusic(self, music, looping = 0, interrupt = 1, volume = None, time = 0.0):
         OTPBase.OTPBase.playMusic(self, music, looping, interrupt, volume, time)
+
+    def toggleSprint(self):
+        if hasattr(base, 'localAvatar') and not base.localAvatar.hp <= 0:   
+            if self.isSprinting:
+                self.isSprinting = 0
+                # set speeds back to normal
+                base.localAvatar.currentSpeed = OTPGlobals.ToonForwardSpeed
+                base.localAvatar.setWalkSpeedNormal()
+            else:
+                self.isSprinting = 1
+                # keep increasing the acceleration by 0.1x every 0.5 seconds
+                self.notify.debug(f'sprint: {self.isSprinting}, speed: {base.localAvatar.currentSpeed}')
+                taskMgr.doMethodLater(0.5, self.sprint, 'sprintTask')
+            
+    def sprint(self, task):
+        if self.isSprinting:
+            base.localAvatar.increaseSpeed()
+            self.notify.debug(f'sprint: {self.isSprinting}, speed: {base.localAvatar.currentSpeed}')
+            return task.again
+        else:
+            return task.done
+        

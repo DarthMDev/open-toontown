@@ -80,6 +80,7 @@ class LocalAvatar(DistributedAvatar.DistributedAvatar, DistributedSmoothNode.Dis
         self.showNametag2d()
         self.setPickable(0)
         self.posCameraSeq = None
+        self.currentSpeed = OTPGlobals.ToonForwardSpeed
         return
 
     def useSwimControls(self):
@@ -429,7 +430,14 @@ class LocalAvatar(DistributedAvatar.DistributedAvatar, DistributedSmoothNode.Dis
 
     def setWalkSpeedSlow(self):
         self.controlManager.setSpeeds(OTPGlobals.ToonForwardSlowSpeed, OTPGlobals.ToonJumpSlowForce, OTPGlobals.ToonReverseSlowSpeed, OTPGlobals.ToonRotateSlowSpeed)
-
+        
+    def increaseSpeed(self):
+        # increase by 0.1x
+        self.currentSpeed += OTPGlobals.ToonForwardSpeed * 0.1
+        if self.currentSpeed > OTPGlobals.ToonForwardSpeed * 3:
+            self.currentSpeed = OTPGlobals.ToonForwardSpeed * 3
+        self.controlManager.setSpeeds(self.currentSpeed, OTPGlobals.ToonJumpForce, OTPGlobals.ToonReverseSpeed, OTPGlobals.ToonRotateSpeed)
+        
     def pageUp(self):
         if not self.avatarControlsEnabled:
             return
