@@ -98,29 +98,29 @@ class CatalogWainscotingItem(CatalogSurfaceItem):
 
 
 def getWainscotings(*indexList):
-    list = []
+    _list = []
     for index in indexList:
-        list.append(CatalogWainscotingItem(index))
+        _list.append(CatalogWainscotingItem(index))
 
-    return list
+    return _list
 
 
 def getAllWainscotings(*indexList):
-    list = []
+    _list = []
     for index in indexList:
         colors = WainscotingTypes[index][WSTColor]
         if colors:
             for n in range(len(colors)):
-                list.append(CatalogWainscotingItem(index, n))
+                _list.append(CatalogWainscotingItem(index, n))
 
         else:
-            list.append(CatalogWainscotingItem(index, 0))
+            _list.append(CatalogWainscotingItem(index, 0))
 
-    return list
+    return _list
 
 
 def getWainscotingRange(fromIndex, toIndex, *otherRanges):
-    list = []
+    _list = []
     froms = [fromIndex]
     tos = [toIndex]
     i = 0
@@ -135,9 +135,9 @@ def getWainscotingRange(fromIndex, toIndex, *otherRanges):
                 colors = WainscotingTypes[patternIndex][WSTColor]
                 if colors:
                     for n in range(len(colors)):
-                        list.append(CatalogWainscotingItem(patternIndex, n))
+                        _list.append(CatalogWainscotingItem(patternIndex, n))
 
                 else:
-                    list.append(CatalogWainscotingItem(patternIndex, 0))
+                    _list.append(CatalogWainscotingItem(patternIndex, 0))
 
-    return list
+    return _list

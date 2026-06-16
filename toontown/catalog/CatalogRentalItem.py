@@ -128,8 +128,8 @@ class CatalogRentalItem(CatalogItem.CatalogItem):
 
 
 def getAllRentalItems():
-    list = []
+    _list = []
     for rentalType in (ToontownGlobals.RentalCannon,):
-        list.append(CatalogRentalItem(rentalType, 2880, 1000))
+        _list.append(CatalogRentalItem(rentalType, 2880, 1000))
 
-    return list
+    return _list

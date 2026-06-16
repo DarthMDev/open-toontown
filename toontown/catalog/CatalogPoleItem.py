@@ -105,8 +105,8 @@ def nextAvailablePole(avatar, duplicateItems):
 
 
 def getAllPoles():
-    list = []
+    _list = []
     for rodId in range(0, FishGlobals.MaxRodId + 1):
-        list.append(CatalogPoleItem(rodId))
+        _list.append(CatalogPoleItem(rodId))
 
-    return list
+    return _list

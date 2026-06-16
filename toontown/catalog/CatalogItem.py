@@ -1,5 +1,6 @@
 from direct.directnotify import DirectNotifyGlobal
 from panda3d.core import *
+from panda3d.direct import STInt8, STInt16
 from toontown.toonbase import TTLocalizer
 from toontown.toonbase import ToontownGlobals
 from direct.interval.IntervalGlobal import *
@@ -326,9 +327,12 @@ class CatalogItem:
             dg.putArg(self.posHpr[0], STInt16, 10)
             dg.putArg(self.posHpr[1], STInt16, 10)
             dg.putArg(self.posHpr[2], STInt16, 100)
-            dg.putArg(self.posHpr[3], STInt8, 256.0 / 360.0)
-            dg.putArg(self.posHpr[4], STInt8, 256.0 / 360.0)
-            dg.putArg(self.posHpr[5], STInt8, 256.0 / 360.0)
+            h = ((int(round(self.posHpr[3] * 256.0 / 360.0)) + 128) % 256 - 128) * 360.0 / 256.0
+            p = ((int(round(self.posHpr[4] * 256.0 / 360.0)) + 128) % 256 - 128) * 360.0 / 256.0
+            r = ((int(round(self.posHpr[5] * 256.0 / 360.0)) + 128) % 256 - 128) * 360.0 / 256.0
+            dg.putArg(h, STInt8, 256.0 / 360.0)
+            dg.putArg(p, STInt8, 256.0 / 360.0)
+            dg.putArg(r, STInt8, 256.0 / 360.0)
         if store & GiftTag:
             dg.addString(self.giftTag)
         dg.addUint8(self.specialEventId)

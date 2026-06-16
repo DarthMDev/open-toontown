@@ -14,6 +14,7 @@ from direct.showbase import PythonUtil
 from toontown.hood import Place
 from toontown.hood import SkyUtil
 from toontown.pets import PetTutorial
+from toontown.toonbase import ToontownGlobals
 from direct.controls.GravityWalker import GravityWalker
 from otp.distributed.TelemetryLimiter import RotationLimitToH, TLGatherAllAvs, TLNull
 from . import HouseGlobals
