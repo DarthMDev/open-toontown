@@ -380,9 +380,10 @@ class ToontownClientRepository(OTPClientRepository.OTPClientRepository):
                 self.notify.error('Bad avatar: return code %d' % returnCode)
             return
     else:
-        def handleAvatarResponseMsg(self, avatarId, di):
+        def handleAvatarResponseMsg(self, avatarId, di, parentId=None, zoneId=None):
             self.cleanupWaitingForDatabase()
             dclass = self.dclassesByName['DistributedToon']
+            self.notify.debug('handleAvatarResponseMsg: avatarId=%d dclass=%s (%d)' % (avatarId, dclass.getName(), dclass.getNumber()))
             NametagGlobals.setMasterArrowsOn(0)
             loader.beginBulkLoad('localAvatarPlayGame', OTPLocalizer.CREnteringToontown, 400, 1, TTLocalizer.TIP_GENERAL)
             localAvatar = LocalToon.LocalToon(self)
@@ -392,12 +393,18 @@ class ToontownClientRepository(OTPClientRepository.OTPClientRepository):
             NametagGlobals.setToon(base.localAvatar)
             localAvatar.doId = avatarId
             self.localAvatarDoId = avatarId
-            parentId = None
-            zoneId = None
             localAvatar.setLocation(parentId, zoneId)
             localAvatar.generateInit()
             localAvatar.generate()
-            dclass.receiveUpdateBroadcastRequiredOwner(localAvatar, di)
+            self.notify.debug('handleAvatarResponseMsg: calling receiveUpdateAllRequired, di remaining size: %d' % di.getRemainingSize())
+            try:
+                dclass.receiveUpdateAllRequired(localAvatar, di)
+                self.notify.debug('handleAvatarResponseMsg: calling receiveUpdateOther, di remaining size: %d' % di.getRemainingSize())
+                dclass.receiveUpdateOther(localAvatar, di)
+            except Exception as e:
+                self.notify.error('handleAvatarResponseMsg: receiveUpdate failed: %s' % str(e))
+                raise
+            self.notify.info('handleAvatarResponseMsg: receiveUpdate success')
             localAvatar.announceGenerate()
             localAvatar.postGenerateMessage()
             self.doId2do[avatarId] = localAvatar
@@ -1167,7 +1174,8 @@ class ToontownClientRepository(OTPClientRepository.OTPClientRepository):
                 parentId = di.getUint32()
                 zoneId = di.getUint32()
                 classId = di.getUint16()
-                self.handleAvatarResponseMsg(doId, di)
+                self.notify.info('handleGenerateWithRequiredOtherOwner: doId=%d parentId=%d zoneId=%d classId=%d' % (doId, parentId, zoneId, classId))
+                self.handleAvatarResponseMsg(doId, di, parentId, zoneId)
 
     def handleQuietZoneUpdateField(self, di):
         di2 = DatagramIterator(di)

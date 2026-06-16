@@ -107,29 +107,29 @@ class CatalogMouldingItem(CatalogSurfaceItem):
 
 
 def getMouldings(*indexList):
-    list = []
+    _list = []
     for index in indexList:
-        list.append(CatalogMouldingItem(index))
+        _list.append(CatalogMouldingItem(index))
 
-    return list
+    return _list
 
 
 def getAllMouldings(*indexList):
-    list = []
+    _list = []
     for index in indexList:
         colors = MouldingTypes[index][MTColor]
         if colors:
             for n in range(len(colors)):
-                list.append(CatalogMouldingItem(index, n))
+                _list.append(CatalogMouldingItem(index, n))
 
         else:
-            list.append(CatalogMouldingItem(index, 0))
+            _list.append(CatalogMouldingItem(index, 0))
 
-    return list
+    return _list
 
 
 def getMouldingRange(fromIndex, toIndex, *otherRanges):
-    list = []
+    _list = []
     froms = [fromIndex]
     tos = [toIndex]
     i = 0
@@ -144,9 +144,9 @@ def getMouldingRange(fromIndex, toIndex, *otherRanges):
                 colors = MouldingTypes[patternIndex][MTColor]
                 if colors:
                     for n in range(len(colors)):
-                        list.append(CatalogMouldingItem(patternIndex, n))
+                        _list.append(CatalogMouldingItem(patternIndex, n))
 
                 else:
-                    list.append(CatalogMouldingItem(patternIndex, 0))
+                    _list.append(CatalogMouldingItem(patternIndex, 0))
 
-    return list
+    return _list

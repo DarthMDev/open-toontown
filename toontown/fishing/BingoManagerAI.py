@@ -1,3 +1,4 @@
+# From Anesidora
 #################################################################
 # class: BingoManagerAI.py
 #
@@ -560,5 +561,4 @@ class BingoManagerAI(object):
             if distObj.zoneId != zoneId:
                 self.notify.info("handleSuperBingoWin: Did not win in zone %s" %(distObj.zoneId))
                 distObj.handleSuperBingoLoss()
-
 

@@ -89,16 +89,16 @@ class CatalogItemList:
         self.__list = self.__makeList(self.store)
 
     def __makeList(self, store):
-        list = []
+        _list = []
         if self.__blob:
             dg = PyDatagram(self.__blob)
             di = PyDatagramIterator(dg)
             versionNumber = di.getUint8()
             while di.getRemainingSize() > 0:
                 item = CatalogItem.decodeCatalogItem(di, versionNumber, store)
-                list.append(item)
+                _list.append(item)
 
-        return list
+        return _list
 
     def append(self, item):
         if self.__list == None:
