@@ -1,4 +1,5 @@
 from direct.directnotify import DirectNotifyGlobal
+from panda3d.direct import DCPacker
 from otp.distributed.OTPInternalRepository import OTPInternalRepository
 from otp.distributed.OtpDoGlobals import *
 
@@ -34,3 +35,27 @@ class ToontownInternalRepository(OTPInternalRepository):
             dg = dclass.aiFormatUpdate(
                     fieldName, doId, channelId, self.ourChannel, args)
             self.send(dg)
+
+    def packDclassValueDict(self, dclass, fieldDict):
+        """
+        Converts a {fieldName: fieldValue} dict into a
+        {fieldName: packedFieldValue} dict.
+
+        The database interface hands us unpacked field values, but the OTP
+        estate code (initEstateData / initFromServerResponse / directUpdate)
+        wants the values packed the way they'd arrive off the wire.
+        """
+        valueDict = {}
+        packer = DCPacker()
+
+        for fieldName in fieldDict:
+            field = dclass.getFieldByName(fieldName)
+
+            packer.beginPack(field)
+            field.packArgs(packer, fieldDict[fieldName])
+            packer.endPack()
+
+            valueDict[fieldName] = packer.getBytes()
+            packer.clearData()
+
+        return valueDict

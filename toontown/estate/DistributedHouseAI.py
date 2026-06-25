@@ -46,15 +46,21 @@ class DistributedHouseAI(DistributedObjectAI.DistributedObjectAI):
 
     HouseModel = None
 
-    def __init__(self, air):
+    def __init__(self, air, doId, estateId, zoneId, posIndex):
         DistributedObjectAI.DistributedObjectAI.__init__(self, air)
-        self.doId = 0
-        #self.estateId = 0
-        self.zoneId = 0
+        self.doId = doId
+        self.estateId = estateId
+        self.zoneId = zoneId
         self.housePos = 0
         # self.garden = None
         self.cannon = None
-        self.housePosInd = 0
+        self.housePosInd = posIndex
+
+        # houseId is a database object, so don't give its channel back to the
+        # allocator when it's deleted.  (Empty-slot houses get a freshly
+        # allocated channel instead and should be freed normally.)
+        if doId < 400000000:
+            self.doNotDeallocateChannel = True
 
         # these members are stored in the db and initialized in the
         # initFromServerResponse function (called by the estateAI).
@@ -68,7 +74,7 @@ class DistributedHouseAI(DistributedObjectAI.DistributedObjectAI):
 
         self.ownerId = 0
         self.name = ""
-        self.colorIndex = 0
+        self.colorIndex = posIndex
         self.atticItems = CatalogItemList.CatalogItemList()
         self.interiorItems = CatalogItemList.CatalogItemList()
         self.atticWallpaper = CatalogItemList.CatalogItemList()
@@ -123,9 +129,15 @@ class DistributedHouseAI(DistributedObjectAI.DistributedObjectAI):
                 self.interiorManager = None
             DistributedObjectAI.DistributedObjectAI.delete(self)
 
-    def announceGenerate(self):
-        DistributedObjectAI.DistributedObjectAI.announceGenerate(self)
-        self.setupEnvirons()
+    def initFromServerResponse(self, valDict):
+        # valDict is a {fieldName: packedValue} dict (from the air's
+        # packDclassValueDict).  Apply each stored field to ourselves before
+        # we generate, the same way the estate loads its own fields.  An
+        # empty dict (a brand new or unowned house) just leaves the __init__
+        # defaults in place.
+        for key in valDict:
+            if hasattr(self, key):
+                self.dclass.directUpdate(self, key, valDict[key])
 
     def setupEnvirons(self):
         self.doId = self.getDoId()

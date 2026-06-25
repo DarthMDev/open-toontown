@@ -8,8 +8,8 @@ from . import DistributedEstateAI
 from direct.task.Task import Task
 from . import DistributedHouseAI
 from . import HouseGlobals
-from .LoadEstateOperation import LoadEstateOperation
 import random
+import time
 
 TELEPORT_TO_OWNER_ONLY = 0
 
@@ -24,7 +24,7 @@ class EstateManagerAI(DistributedObjectAI.DistributedObjectAI):
         self.estateZone = {}    # dict of tuple of [zoneId, isOwner, userName] keyed on avId
         self.estate = {}        # dict of DistributedEstateAI's keyed on avId
         self.house = {}         # dict of lists of DistributedHouseAI's keyed on avId
-        self.account2avId = {}  # mapping of userName to avId that created estate
+        self.account2avId = {}  # mapping of accId to avId that created estate
         self.toBeDeleted = {}   # temporary list of av's to be deleted after a delay
         self.zone2owner = {}    # get the owner of a zone
         self.houseZone2estateZone = {}
@@ -34,7 +34,6 @@ class EstateManagerAI(DistributedObjectAI.DistributedObjectAI):
         self.healFrequency = 30 # seconds
 
         self.randomGenerator = random.Random()
-        self.estateLoads = {}   # estate loads in progress, keyed on avId
         return None
 
     def delete(self):
@@ -115,6 +114,7 @@ class EstateManagerAI(DistributedObjectAI.DistributedObjectAI):
         else:
             self.notify.debug("we are teleporting to our own estate, %d, %d" % (self.air.getAvatarIdFromSender(), ownerId))
             avId = ownerId
+            accId = self.air.getAccountIdFromSender()
             goingHome = 1
 
         # first check if we (the message sender) are in an estate already
@@ -138,7 +138,7 @@ class EstateManagerAI(DistributedObjectAI.DistributedObjectAI):
                     self.__exitEstate(avId)
 
                     # create the estate zone and objects
-                    self.__createEstateZoneAndObjects(avId, goingHome, ownerId, name)
+                    self.__createEstateZoneAndObjects(avId, goingHome, ownerId, accId)
                     # this happens later, we don't know the zoneId yet
                     #self._listenForToonEnterEstate(avId, ownerId, zoneId)
             else:
@@ -161,7 +161,7 @@ class EstateManagerAI(DistributedObjectAI.DistributedObjectAI):
                 #self.notify.debug('going to our home')
                 # we are going to our estate
                 # create the estate zone and objects
-                self.__createEstateZoneAndObjects(avId, goingHome, ownerId, name)
+                self.__createEstateZoneAndObjects(avId, goingHome, ownerId, accId)
                 # this happens later, we don't know the zoneId yet
                 #self._listenForToonEnterEstate(avId, ownerId, zoneId)
             else:
@@ -301,7 +301,7 @@ class EstateManagerAI(DistributedObjectAI.DistributedObjectAI):
             self.notify.warning("zone did not exist for estate owner %d, and visitor %d" % (ownerId, recipient))
             self.sendUpdateToAvatarId(recipient, "setEstateZone", [0, 0])
 
-    def __createEstateZoneAndObjects(self, avId, isOwner, ownerId, name):
+    def __createEstateZoneAndObjects(self, avId, isOwner, ownerId, accId):
         # assume this is only called when isOwner == 1
 
         # stop any cleanup tasks that might be pending for this avId
@@ -320,24 +320,23 @@ class EstateManagerAI(DistributedObjectAI.DistributedObjectAI):
             return
 
         # check if our account has an estate created under a different avatar
-        if self.__checkAccountSwitchedAvatars(name, avId):
+        if self.__checkAccountSwitchedAvatars(accId, avId):
             return
 
         # request the zone for the owners estate
         zoneId = self.air.allocateZone()
-        self.setEstateZone(avId, [zoneId, isOwner, name]) # [zoneId, isOwner, userName (if owner)]
-        self.account2avId[name] = avId
+        self.setEstateZone(avId, [zoneId, isOwner, accId]) # [zoneId, isOwner, accId (if owner)]
+        self.account2avId[accId] = avId
         self.zone2owner[zoneId] = avId
 
         # start a ref count for this zone id
         self.refCount[zoneId] = []
 
-        # don't send a message back yet, the estate isn't filled in.  the
-        # load goes off and reads (or creates) the estate, houses and pets,
-        # and calls us back at handleGetEstate when it's done.
-        operation = LoadEstateOperation(self, self.handleGetEstate)
-        self.estateLoads[avId] = operation
-        operation.start(avId, ownerId, zoneId)
+        # don't send a message back yet, the estate isn't filled in.  ask the
+        # air to pull (or create) the estate, houses and pets out of the
+        # database, and call us back at handleGetEstate when it's ready.
+        callback = PythonUtil.Functor(self.handleGetEstate, avId, ownerId)
+        self.air.getEstate(avId, accId, zoneId, callback)
 
     def __removeReferences(self, avId, zoneId):
         try:
@@ -382,9 +381,9 @@ class EstateManagerAI(DistributedObjectAI.DistributedObjectAI):
             else:
                 self.refCount[zoneId] = [avId]
 
-    def __checkAccountSwitchedAvatars(self, name, ownerId):
+    def __checkAccountSwitchedAvatars(self, accId, ownerId):
         self.notify.debug("__checkAccountSwitchedAvatars")
-        prevAvId = self.account2avId.get(name)
+        prevAvId = self.account2avId.get(accId)
         if prevAvId:
             self.notify.debug("we indeed did switch avatars")
             # the estate exists, remap all references from prevAvId
@@ -394,7 +393,7 @@ class EstateManagerAI(DistributedObjectAI.DistributedObjectAI):
             self.__stopCleanupTask(prevAvId)
 
             # now remap references
-            self.account2avId[name] = ownerId
+            self.account2avId[accId] = ownerId
 
             #if self.estateZone.has_key(prevAvId):
             if prevAvId in self.toBeDeleted:
@@ -403,43 +402,116 @@ class EstateManagerAI(DistributedObjectAI.DistributedObjectAI):
             return 1
         return 0
 
-    def handleGetEstate(self, avId, ownerId, estate, houses):
-        # called by the LoadEstateOperation once the estate, its houses and
-        # its pets are all read from (or made in) the database and live in the
-        # estate zone.  estate is None if the load failed.  this only ever
-        # happens for the owner of the estate.
+    def handleGetEstate(self, avId, ownerId, estateId, estateVal,
+                        numHouses, houseId, houseVal, petIds, gardensStarted,
+                        valDict = None):
         self.notify.debug("handleGetEstate %s" % avId)
+        # this function is called after the estate data is pulled
+        # from the database.  the houseAI object is initialized
+        # here, and if values don't exist for certain db fields
+        # default values are given.
 
-        # we're done with the load
-        self.estateLoads.pop(avId, None)
+        # Note:  this is the place where randomized default values
+        # should be assigned to the toons house.  For example:
+        # door types, windows, colors, house selection, garden placement
+        # etc.  The first time the toon visits his house, these
+        # defaults will be computed and stored.
 
-        if estate is None:
-            self.notify.warning("estate load failed for owner %s" % ownerId)
-            self.__sendZoneToClient(avId, ownerId)
+        # Note:  this function is only called by the owner of the estate
+
+        # there is a chance that the owner will already have left (by
+        # closing the window).  We need to handle that gracefully.
+
+        if not ownerId in self.estateZone:
+            self.notify.warning("Estate info was requested, but the owner left before it could be recived: %d" % estateId)
+            return
+        elif not avId in self.air.doId2do:
+            self.notify.warning("Estate owner %s in self.estateZone, but not in doId2do" % avId)
             return
 
-        # the owner may have left (e.g. closed the window) while we were
-        # talking to the database.  if so, throw away what we just loaded.
-        if ownerId not in self.estateZone or avId not in self.air.doId2do:
-            self.notify.warning("owner %s left before the estate was ready" % ownerId)
-            estate.requestDelete()
-            for house in houses:
-                if house is not None:
-                    house.requestDelete()
-            return
+        # create the DistributedEstateAI object for this avId
+        if avId in self.estateZone:
+            if estateId in self.air.doId2do:
+                self.notify.warning("Already have distobj %s, not generating again" % (estateId))
+            else:
+                self.notify.info('start estate %s init, owner=%s, frame=%s' %
+                                 (estateId, ownerId, globalClock.getFrameCount()))
 
-        # hang onto the objects so the cleanup code can delete them later
-        self.estate[avId] = estate
-        self.house[avId] = houses
+                # give the estate a time seed
+                estateZoneId = self.estateZone[avId][0]
+                ts = time.time() % HouseGlobals.DAY_NIGHT_PERIOD
+                self.randomGenerator.seed(estateId)
+                dawn = HouseGlobals.DAY_NIGHT_PERIOD * self.randomGenerator.random()
+                estateAI = DistributedEstateAI.DistributedEstateAI(self.air, avId,
+                                                                   estateZoneId, ts, dawn, valDict)
+                # estateId is a database object, so don't give its channel back
+                # to the allocator when it's deleted.
+                estateAI.doNotDeallocateChannel = True
+                estateAI.generateWithRequiredAndId(estateId,
+                                                   self.air.districtId,
+                                                   estateZoneId)
 
-        # create a pond bingo manager ai for the new estate
-        if simbase.wantBingo:
-            self.notify.info('creating bingo mgr for estate %s' % estate.doId)
-            self.air.createPondBingoMgrAI(estate)
+                estateAI.initEstateData(estateVal, numHouses, houseId, houseVal)
+                estateAI.setPetIds(petIds)
+                self.estate[avId] = estateAI
 
-        self.notify.info('finish estate %s init, owner=%s' % (estate.doId, ownerId))
+                # create the DistributedHouseAI's.  This was originally done by the EstateAI
+                # but we need to move it here so we can explicitly control when the
+                # DistributedHouse objects get deleted from the stateserver.
+                self.house[avId] = [None] * numHouses
+                for i in range(numHouses):
+                    if houseId[i] in self.air.doId2do:
+                        self.notify.warning("doId of house %s conflicts with a %s!" % (houseId[i], self.air.doId2do[houseId[i]].__class__.__name__))
 
-        # the zone is set up, tell the client about it
+                    else:
+                        house = DistributedHouseAI.DistributedHouseAI(self.air,
+                                                                      houseId[i],
+                                                                      estateId, estateZoneId, i)
+
+                        # get house information
+                        house.initFromServerResponse(houseVal[i])
+                        self.house[avId][i] = house
+
+                        # Now that we have all the data loaded, officially
+                        # generate the distributed object
+                        house.generateWithRequiredAndId(houseId[i],
+                                                        self.air.districtId,
+                                                        estateZoneId)
+
+                        house.setupEnvirons()
+
+                        # Finally, make sure that the house has a good owner,
+                        # and then tell the client the house is ready.
+                        house.checkOwner()
+
+                        estateAI.houseList.append(house)
+
+                estateAI.postHouseInit()
+
+                #get us a list of the owners of the houses
+                avIdList = []
+                for id in houseId:
+                    avHouse = simbase.air.doId2do.get(id)
+                    avIdList.append(avHouse.ownerId)
+
+                if simbase.wantPets:
+                    self.notify.debug('creating pet collisions for estate %s' %
+                                     estateId)
+                    estateAI.createPetCollisions()
+
+                # create a pond bingo manager ai for the new estate
+                if simbase.wantBingo:
+                    self.notify.info('creating bingo mgr for estate %s' %
+                                     estateId)
+                    self.air.createPondBingoMgrAI(estateAI)
+
+                self.notify.info('finish estate %s init, owner=%s' %
+                                 (estateId, ownerId))
+
+                estateAI.gardenInit(avIdList, gardensStarted)
+
+        # Now that the zone is set up, send the notification back to
+        # the client.
         self.__sendZoneToClient(avId, ownerId)
         zoneId = self.estateZone[ownerId][0]
         self._listenForToonEnterEstate(avId, ownerId, zoneId)

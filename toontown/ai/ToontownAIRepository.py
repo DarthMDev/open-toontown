@@ -605,6 +605,163 @@ class ToontownAIRepository(ToontownInternalRepository):
 
         self.zoneAllocator.free(zone)
 
+    def getEstate(self, avId, accId, zoneId, callback):
+        # OTP used to answer the estate request with a single getEstate query
+        # to its db server.  We don't have that on Astron, so we read (or
+        # create) the account's estate, its houses and its pets ourselves,
+        # then pack the results into the format the old estate code expects and
+        # pass them to callback.
+        self.notify.debug('getEstate: avId=%s accId=%s zoneId=%s' % (avId, accId, zoneId))
+        estateId = 0
+        estateVal = {} # {estateFieldName: packedValues}
+        avIds = []
+
+        avatars = {} # {avId: {fieldName: [fieldValue]}}
+
+        def __handleGetEstate(dclass, fields):
+            if dclass != self.dclassesByName['DistributedEstateAI']:
+                self.notify.warning('account %s has a non-estate dclass %s!' % (accId, dclass))
+                return
+
+            nonlocal estateVal
+            # pack the estate fields the way the estate AI wants to read them
+            estateVal = self.packDclassValueDict(dclass, fields)
+
+            # the estate is ready, move on to the houses
+            self.getHouses(avId, accId, zoneId, estateId, estateVal, avIds, avatars, callback)
+
+        def __gotAllAvatars():
+            if estateId:
+                self.dbInterface.queryObject(self.dbId, estateId, __handleGetEstate)
+            else:
+                # no estate yet, make one and bind it to the account
+                def __handleEstateCreated(newEstateId):
+                    nonlocal estateId
+                    estateId = newEstateId
+                    self.dbInterface.updateObject(self.dbId, accId, self.dclassesByName['AstronAccountAI'],
+                                                  {'ESTATE_ID': estateId})
+
+                    self.dbInterface.queryObject(self.dbId, estateId, __handleGetEstate)
+
+                self.dbInterface.createObject(self.dbId, self.dclassesByName['DistributedEstateAI'], {},
+                                              __handleEstateCreated)
+
+        def __handleGetAvatar(dclass, fields, index):
+            if dclass != self.dclassesByName['DistributedToonAI']:
+                self.notify.warning('account %s avatar %s has a non-toon dclass %s!' % (accId, avIds[index], dclass))
+                return
+
+            fields['avId'] = avIds[index]
+            avatars[index] = fields
+            if len(avatars) == 6:
+                __gotAllAvatars()
+
+        def __handleGetAccount(dclass, fields):
+            if dclass != self.dclassesByName['AstronAccountAI']:
+                self.notify.warning('account %s has a non-account dclass %s!' % (accId, dclass))
+                return
+
+            nonlocal estateId, avIds, avatars
+            estateId = fields.get('ESTATE_ID', 0)
+            avIds = fields.get('ACCOUNT_AV_SET', [0] * 6)
+            # sanitize the av set in case it is the wrong length
+            avIds = avIds[:6]
+            avIds += [0] * (6 - len(avIds))
+            for index, avId in enumerate(avIds):
+                if avId == 0:
+                    avatars[index] = None
+                    continue
+
+                # pull the toon object for each occupied slot
+                self.dbInterface.queryObject(self.dbId, avId,
+                                             lambda dclass, fields, idx=index: __handleGetAvatar(dclass, fields, idx))
+
+        # start by reading the account
+        self.dbInterface.queryObject(self.dbId, accId, __handleGetAccount)
+
+    def getHouses(self, avId, accId, zoneId, estateId, estateVal, avIds, avatars, callback):
+        # Second half of getEstate: read (or create) a house for every slot,
+        # gather the pet ids, then fire the callback with everything the
+        # estate manager needs.
+        self.notify.debug('getHouses: accId=%s estateId=%s avIds=%s' % (accId, estateId, avIds))
+
+        houseIds = [0] * len(avIds)
+        houseVal = [None] * len(avIds) # [packedHouseValues]
+
+        def __gotAllHouses():
+            # a toon brings its pet along to the estate
+            petIds = [0] * len(avIds)
+            for index in avatars:
+                if avatars[index] != None:
+                    petId = avatars[index].get('setPetId', [0])[0]
+                    if petId != 0:
+                        petIds[index] = petId
+
+            # note which toons have already started a garden
+            gardensStarted = [False] * len(avIds)
+            for index in avatars:
+                if avatars[index] != None:
+                    gardenStarted = avatars[index].get('setGardenStarted', [0])[0]
+                    if gardenStarted:
+                        gardensStarted[index] = True
+
+            # everything is loaded, hand it back to the estate manager
+            callback(estateId, estateVal, len(houseIds), houseIds, houseVal,
+                     petIds, gardensStarted, estateVal)
+
+        def __handleGetHouse(dclass, fields, index):
+            nonlocal houseVal
+            if dclass != self.dclassesByName['DistributedHouseAI']:
+                self.notify.warning('avatar %s has a non-house object with dclass %s!' % (avIds[index], dclass))
+                return
+
+            # the house remembers its owner and name from the toon
+            fields['setAvatarId'] = [avIds[index]]
+            fields['setName'] = avatars[index]['setName']
+
+            houseVal[index] = self.packDclassValueDict(dclass, fields)
+
+            if None not in houseVal:
+                __gotAllHouses()
+
+        def __handleHouseCreated(houseId, index):
+            nonlocal houseIds, houseVal
+
+            houseIds[index] = houseId
+            av = self.doId2do.get(avIds[index])
+            if av:
+                # toon is online, update it directly
+                av.b_setHouseId(houseId)
+            else:
+                self.dbInterface.updateObject(self.dbId, avIds[index],
+                                              self.dclassesByName['DistributedToonAI'],
+                                              {'setHouseId': [houseId]})
+
+            __handleGetHouse(self.dclassesByName['DistributedHouseAI'], {}, index)
+
+        for index in avatars:
+            if avatars[index] == None:
+                # empty slot, no toon to own a house.  give it an id anyway so
+                # the slot generates as an empty house
+                houseId = self.allocateChannel()
+                houseIds[index] = houseId
+                houseVal[index] = {}
+                if None not in houseVal:
+                    __gotAllHouses()
+                    return
+                else:
+                    continue
+            houseId = avatars[index].get('setHouseId', [0])[0]
+            if houseId == 0:
+                # toon has no house yet, make one
+                self.dbInterface.createObject(self.dbId, self.dclassesByName['DistributedHouseAI'],
+                                              {},
+                                              lambda houseId, idx=index: __handleHouseCreated(houseId, idx))
+            else:
+                houseIds[index] = houseId
+                self.dbInterface.queryObject(self.dbId, houseId,
+                                             lambda dclass, fields, idx=index: __handleGetHouse(dclass, fields, idx))
+
     def trueUniqueName(self, idString):
         return self.uniqueName(idString)
 

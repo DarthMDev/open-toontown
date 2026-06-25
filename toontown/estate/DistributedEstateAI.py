@@ -54,21 +54,17 @@ class DistributedEstateAI(DistributedObjectAI.DistributedObjectAI):
     epochHourInSeconds = timeToEpoch * 60 * 60
     dayInSeconds = 24 * 60 * 60
 
-    def __init__(self, air):
+    def __init__(self, air, avId, zoneId, ts, dawn, valDict = None):
         DistributedObjectAI.DistributedObjectAI.__init__(self, air)
 
         # the avatar currently in charge of the estate
-        #self.notify.debug("created with avId = %d and zoneId = %d" % (avId, zoneId))
-        #self.avId = 0
-        #self.zoneId = 0
+        self.notify.debug("created with avId = %d and zoneId = %d" % (avId, zoneId))
+        self.avId = avId
+        self.zoneId = zoneId
 
         #simbase.air.lastEstate = self inable to check the estate.
         self.houses = [None] * 6
         self.estateType = 0
-        if not hasattr(self, 'avId'):
-            self.avId = 0
-        if not hasattr(self, 'zoneId'):
-            self.zoneId = 0
         self.estateButterflies = None
         self.fishingSpots = None
         self.fishingPonds = None
@@ -96,14 +92,14 @@ class DistributedEstateAI(DistributedObjectAI.DistributedObjectAI):
         self.gameTableFlag = False
 
         # for day/night
-        #self.serverTime = ts
-        self.dawnTime = 0
+        self.serverTime = ts
+        self.dawnTime = dawn
 
         #here we load in all the database fields
-        #if valDict:
-          #  for key in valDict:
-           #     if hasattr(self, key):
-           #         self.dclass.directUpdate(self, key, valDict[key])
+        if valDict:
+            for key in valDict:
+                if hasattr(self, key):
+                    self.dclass.directUpdate(self, key, valDict[key])
 
         # keep track of generation/deletion from stateserver
         self.Estate_generated = 0
@@ -133,11 +129,6 @@ class DistributedEstateAI(DistributedObjectAI.DistributedObjectAI):
         for count in range(self.toonsPerAccount):
 
             self.gardenTable.append([0] * self.maxSlots) #ACCOUNT HAS 6 TOONS
-
-    def announceGenerate(self):
-        DistributedObjectAI.DistributedObjectAI.announceGenerate(self)
-        self.initEstateData()
-        self.createPetCollisions()
 
     def generate(self):
         DistributedEstateAI.notify.debug("DistEstate generate: %s" % self.doId)
@@ -531,7 +522,7 @@ class DistributedEstateAI(DistributedObjectAI.DistributedObjectAI):
         self.d_setIdList(idList)
 
 
-    def gardenInit(self, avIdList):
+    def gardenInit(self, avIdList, gardensStarted = None):
         self.sendUpdate('setIdList', [avIdList])
         #self.bootStrapEpochs()
 
